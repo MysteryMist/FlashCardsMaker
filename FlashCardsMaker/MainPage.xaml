@@ -1,0 +1,104 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:local="clr-namespace:FlashCardsMaker"
+             x:Class="FlashCardsMaker.MainPage"
+             Title="Draconia Cards"
+             BackgroundColor="#121212">
+    <CollectionView ItemsSource="{Binding FilteredDecks}" SelectionMode="None">
+        <CollectionView.Header>
+            <VerticalStackLayout Padding="24" Spacing="22">
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+                <Image Source="no_bgdraconiaicon.png" WidthRequest="56" HeightRequest="56" Aspect="AspectFit" VerticalOptions="Center" />
+                <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
+                    <Label Text="DRACONIA CARDS" FontSize="21" FontAttributes="Bold" CharacterSpacing="2" />
+                    <Label Text="JAPANESE FLASHCARD PUBLISHING STUDIO" FontSize="10" TextColor="#A3AAA4" CharacterSpacing="1.4" />
+                </VerticalStackLayout>
+                <VerticalStackLayout Grid.Column="2" Spacing="2" HorizontalOptions="End" VerticalOptions="Center">
+                    <Label Text="LOCAL WORKSPACE" FontSize="10" TextColor="#A9C6B7" HorizontalTextAlignment="End" />
+                    <Label Text="{Binding SaveStatus}" FontSize="11" TextColor="#A3AAA4" HorizontalTextAlignment="End" />
+                </VerticalStackLayout>
+            </Grid>
+
+            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="12">
+                <Border BackgroundColor="#1B1B1B" Stroke="{StaticResource PanelBorder}" StrokeThickness="1.5" StrokeShape="RoundRectangle 12" Padding="16"><VerticalStackLayout Spacing="3"><Label Text="DECKS" FontSize="10" TextColor="#A3AAA4" /><Label Text="{Binding DeckCount}" FontSize="25" FontAttributes="Bold" /></VerticalStackLayout></Border>
+                <Border Grid.Column="1" BackgroundColor="#1B1B1B" Stroke="{StaticResource PanelBorder}" StrokeThickness="1.5" StrokeShape="RoundRectangle 12" Padding="16"><VerticalStackLayout Spacing="3"><Label Text="FLASHCARDS" FontSize="10" TextColor="#A3AAA4" /><Label Text="{Binding TotalCards}" FontSize="25" FontAttributes="Bold" /></VerticalStackLayout></Border>
+                <Border Grid.Column="2" BackgroundColor="#1B1B1B" Stroke="{StaticResource PanelBorder}" StrokeThickness="1.5" StrokeShape="RoundRectangle 12" Padding="16"><VerticalStackLayout Spacing="3"><Label Text="COMPLETED" FontSize="10" TextColor="#A3AAA4" /><Label Text="{Binding CompletedDeckCount}" FontSize="25" FontAttributes="Bold" /></VerticalStackLayout></Border>
+            </Grid>
+
+            <VerticalStackLayout Spacing="12">
+                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10"><VerticalStackLayout Spacing="2"><Label Text="My library" FontSize="22" FontAttributes="Bold" /><Label Text="Your decks, drafts, and print projects" FontSize="12" TextColor="#A3AAA4" /></VerticalStackLayout><Button Grid.Column="1" Text="Import deck data" Command="{Binding ImportDeckDataCommand}" BackgroundColor="#1F6F50" TextColor="#F5F5F5" FontAttributes="Bold" FontSize="12" Padding="10,6" /><ActivityIndicator Grid.Column="2" IsRunning="{Binding IsBusy}" Color="#1F6F50" /></Grid>
+                <Border BackgroundColor="#1B1B1B" Stroke="{StaticResource PanelBorder}" StrokeThickness="1.5" StrokeShape="RoundRectangle 14" Padding="16">
+                    <VerticalStackLayout Spacing="12">
+                        <Label Text="START A NEW DECK" FontSize="11" FontAttributes="Bold" TextColor="#A9C6B7" />
+                        <Entry Placeholder="Deck name — for example, N5 VERBS" Text="{Binding NewDeckName}" />
+                        <Grid ColumnDefinitions="*,*" ColumnSpacing="10"><Picker Title="JLPT level" ItemsSource="{Binding JlptLevels}" SelectedItem="{Binding NewDeckJlptLevel}" /><Picker Grid.Column="1" Title="Card type" ItemsSource="{Binding CardTypes}" SelectedItem="{Binding NewDeckCardType}" /></Grid>
+                        <Button Text="＋  Create deck" Command="{Binding CreateDeckCommand}" BackgroundColor="#1F6F50" TextColor="#F5F5F5" HorizontalOptions="Start" />
+                    </VerticalStackLayout>
+                </Border>
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                    <Border BackgroundColor="#1B1B1B" Stroke="{StaticResource PanelBorder}" StrokeThickness="1.5" StrokeShape="RoundRectangle 12" Padding="12">
+                        <VerticalStackLayout Spacing="6">
+                            <Label Text="FILTER BY JLPT" FontSize="11" FontAttributes="Bold" TextColor="#A9C6B7" />
+                            <FlexLayout Direction="Row" Wrap="Wrap" BindableLayout.ItemsSource="{Binding JlptFilterOptions}">
+                                <BindableLayout.ItemTemplate>
+                                    <DataTemplate>
+                                        <HorizontalStackLayout Spacing="2" Margin="0,0,8,0">
+                                            <CheckBox IsChecked="{Binding IsSelected}" Color="#1F6F50" VerticalOptions="Center" />
+                                            <Label Text="{Binding Value}" VerticalOptions="Center" FontSize="12" />
+                                        </HorizontalStackLayout>
+                                    </DataTemplate>
+                                </BindableLayout.ItemTemplate>
+                            </FlexLayout>
+                        </VerticalStackLayout>
+                    </Border>
+                    <Border Grid.Column="1" BackgroundColor="#1B1B1B" Stroke="{StaticResource PanelBorder}" StrokeThickness="1.5" StrokeShape="RoundRectangle 12" Padding="12">
+                        <VerticalStackLayout Spacing="6">
+                            <Label Text="FILTER BY CARD TYPE" FontSize="11" FontAttributes="Bold" TextColor="#A9C6B7" />
+                            <FlexLayout Direction="Row" Wrap="Wrap" BindableLayout.ItemsSource="{Binding CardTypeFilterOptions}">
+                                <BindableLayout.ItemTemplate>
+                                    <DataTemplate>
+                                        <HorizontalStackLayout Spacing="2" Margin="0,0,8,0">
+                                            <CheckBox IsChecked="{Binding IsSelected}" Color="#1F6F50" VerticalOptions="Center" />
+                                            <Label Text="{Binding Value}" VerticalOptions="Center" FontSize="12" />
+                                        </HorizontalStackLayout>
+                                    </DataTemplate>
+                                </BindableLayout.ItemTemplate>
+                            </FlexLayout>
+                        </VerticalStackLayout>
+                    </Border>
+                </Grid>
+                <Entry Placeholder="Search decks by name, JLPT, or type" Text="{Binding DeckSearchText}" IsVisible="{Binding HasDecks}" />
+                <Label Text="No decks yet. Create a deck above to begin your first print project." IsVisible="{Binding IsEmpty}" FontSize="12" TextColor="#A3AAA4" />
+                <Label Text="No decks match your search or filter." IsVisible="{Binding HasNoSearchResults}" FontSize="12" TextColor="#A3AAA4" />
+            </VerticalStackLayout>
+            </VerticalStackLayout>
+        </CollectionView.Header>
+        <CollectionView.ItemTemplate>
+            <DataTemplate>
+                <VerticalStackLayout Padding="24,0" Spacing="8">
+                    <Border BackgroundColor="#1B1B1B" Stroke="{Binding SelectionStroke}" StrokeThickness="{Binding SelectionStrokeThickness}" StrokeShape="RoundRectangle 12" Padding="14">
+                        <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="12" RowSpacing="7">
+                            <VerticalStackLayout Spacing="3"><Label Text="{Binding Name}" FontSize="16" FontAttributes="Bold" /><Label Text="{Binding Subtitle}" FontSize="11" TextColor="#A3AAA4" /></VerticalStackLayout>
+                            <Button Grid.Column="1" Grid.RowSpan="2" Text="{Binding EditButtonText}" Command="{Binding Source={RelativeSource AncestorType={x:Type ContentPage}}, Path=BindingContext.ToggleDeckCommand}" CommandParameter="{Binding .}" BackgroundColor="#254235" TextColor="#F5F5F5" VerticalOptions="Center" />
+                            <Grid Grid.Row="1" ColumnDefinitions="Auto,Auto,Auto,Auto,*" ColumnSpacing="10"><Label Text="{Binding StatusLabel}" TextColor="{Binding StatusColor}" FontSize="11" /><Label Grid.Column="1" Text="{Binding FrontProgressLabel}" FontSize="10" TextColor="#A3AAA4" /><Label Grid.Column="2" Text="{Binding BackProgressLabel}" FontSize="10" TextColor="#A3AAA4" /><Label Grid.Column="3" Text="{Binding CardCount, StringFormat='{}{0} cards'}" FontSize="10" TextColor="#A3AAA4" /><Label Grid.Column="4" Text="{Binding ProgressPercent, StringFormat='{}{0}%'}" FontSize="10" TextColor="#A3AAA4" HorizontalTextAlignment="End" /></Grid>
+                            <ProgressBar Grid.Row="2" Grid.ColumnSpan="2" Progress="{Binding ProgressFraction}" ProgressColor="#1F6F50" BackgroundColor="#343A35" HeightRequest="4" />
+                        </Grid>
+                    </Border>
+                    <Grid IsVisible="{Binding IsExpanded}">
+                        <local:DeckEditorView BindingContext="{Binding Source={RelativeSource AncestorType={x:Type ContentPage}}, Path=BindingContext}" />
+                    </Grid>
+                </VerticalStackLayout>
+            </DataTemplate>
+        </CollectionView.ItemTemplate>
+        <CollectionView.Footer>
+            <VerticalStackLayout Spacing="8" Margin="24,22">
+                <Label Text="GREEN  Complete    •    AMBER  In progress    •    RED  Missing information" FontSize="10" TextColor="#A3AAA4" HorizontalTextAlignment="Center" />
+                <VerticalStackLayout Spacing="2">
+                    <Label Text="Developed by:" FontSize="10" TextColor="#A3AAA4" HorizontalTextAlignment="Center" />
+                    <Label Text="ゲロヴァショ　ジョン　ヴィンセント" FontSize="12" TextColor="#A3AAA4" HorizontalTextAlignment="Center" />
+                </VerticalStackLayout>
+            </VerticalStackLayout>
+        </CollectionView.Footer>
+    </CollectionView>
+</ContentPage>
