@@ -13,15 +13,11 @@ namespace FlashCardsMaker.Export;
 public sealed class FlashcardExporter : IFlashcardExporter
 {
     private const float PageMarginPoints = 22;
-    private const float CardWidthInches = 3.62f;
-    private const float CardHeightInches = 2.48f;
     private const int RasterDpi = 300;
     private static readonly string PdfFontFamily = "Times New Roman";
     private static readonly string[] JapaneseFontFamilies = ["MS Gothic", "Yu Gothic UI", "Meiryo"];
     private static readonly string[] TitleFontFamilies = ["Times New Roman", "Georgia"];
     private static readonly string[] InformationFontFamilies = ["Times New Roman", "Georgia"];
-    private static readonly float CardWidthPoints = CardWidthInches * 72f;
-    private static readonly float CardHeightPoints = CardHeightInches * 72f;
 
     public Task<ExportArtifact> GenerateAsync(Deck deck, IReadOnlyList<Flashcard> cards,
         IReadOnlyDictionary<int, IReadOnlyList<CardMeaning>> meaningsByCard,
@@ -111,12 +107,12 @@ public sealed class FlashcardExporter : IFlashcardExporter
         IReadOnlyList<Flashcard> cards, IReadOnlyDictionary<int, IReadOnlyList<CardMeaning>> meaningsByCard,
         int columns, DuplexFlipEdge flipEdge, bool front)
     {
-        var pageWidth = Math.Max(size.Width, (columns * CardWidthPoints) + (PageMarginPoints * 2));
-        var pageHeight = Math.Max(size.Height, (columns * CardHeightPoints) + (PageMarginPoints * 2));
+        var cellWidth = (size.Width - (PageMarginPoints * 2)) / columns;
+        var cellHeight = (size.Height - (PageMarginPoints * 2)) / columns;
 
         document.Page(page =>
         {
-            page.Size(new PageSize(pageWidth, pageHeight));
+            page.Size(size);
             page.Margin(PageMarginPoints);
             page.DefaultTextStyle(style => style.FontFamily(PdfFontFamily).FontSize(10));
             page.Content().Column(sheet =>
@@ -124,18 +120,19 @@ public sealed class FlashcardExporter : IFlashcardExporter
                 for (var rowIndex = 0; rowIndex < columns; rowIndex++)
                 {
                     var capturedRow = rowIndex;
-                    sheet.Item().Height(CardHeightPoints).Row(row =>
+                    sheet.Item().Height(cellHeight).Row(row =>
                     {
                         for (var columnIndex = 0; columnIndex < columns; columnIndex++)
                         {
                             var capturedColumn = columnIndex;
                             var cardIndex = GetCardIndex(capturedRow, capturedColumn, columns, flipEdge, front);
-                            row.ConstantItem(CardWidthPoints).Padding(3).Element(cell =>
+                            row.RelativeItem().Element(cell =>
                             {
                                 if (cardIndex < cards.Count)
                                 {
                                     meaningsByCard.TryGetValue(cards[cardIndex].Id, out var meanings);
-                                    DrawPdfCard(cell, deck, cards[cardIndex], meanings ?? Array.Empty<CardMeaning>(), front);
+                                    DrawPdfCard(cell, deck, cards[cardIndex], meanings ?? Array.Empty<CardMeaning>(),
+                                        front, cellWidth, cellHeight);
                                 }
                                 else
                                 {
@@ -150,7 +147,7 @@ public sealed class FlashcardExporter : IFlashcardExporter
     }
 
     private static void DrawPdfCard(IContainer container, Deck deck, Flashcard card,
-        IReadOnlyList<CardMeaning> meanings, bool front)
+        IReadOnlyList<CardMeaning> meanings, bool front, float cellWidth, float cellHeight)
     {
         container.Border(1).BorderColor(PdfColors.Black).Background(PdfColors.White).Padding(12).Column(column =>
         {
@@ -162,7 +159,7 @@ public sealed class FlashcardExporter : IFlashcardExporter
                     .Bold()
                     .FontColor(PdfColors.Red.Medium);
                 var frontFontSize = FrontTextFontSizer.CalculateSize(
-                    card.FrontText, CardWidthPoints - 32, CardHeightPoints - 48, 62);
+                    card.FrontText, cellWidth - 32, cellHeight - 48, 62);
                 column.Item().ExtendVertical().AlignMiddle().AlignCenter().Text(text =>
                 {
                     foreach (var run in SplitByScript(card.FrontText))
@@ -197,7 +194,7 @@ public sealed class FlashcardExporter : IFlashcardExporter
             });
             var visibleMeanings = meanings.Where(item => !string.IsNullOrWhiteSpace(item.Text)).ToArray();
             var meaningFontSize = MeaningFontSizer.CalculateSize(
-                visibleMeanings.Select(meaning => meaning.Text), CardWidthPoints - 28, CardHeightPoints - 82,
+                visibleMeanings.Select(meaning => meaning.Text), cellWidth - 28, cellHeight - 82,
                 16, 6, 3, 0, 1.2f);
             foreach (var meaning in visibleMeanings)
             {
@@ -298,9 +295,8 @@ public sealed class FlashcardExporter : IFlashcardExporter
         var width = (int)Math.Round(widthPoints * scale);
         var height = (int)Math.Round(heightPoints * scale);
         var margin = (int)Math.Round(PageMarginPoints * scale);
-        var gap = 12;
-        var cellWidth = (width - 2 * margin - (columns - 1) * gap) / (float)columns;
-        var cellHeight = (height - 2 * margin - (columns - 1) * gap) / (float)columns;
+        var cellWidth = (width - 2 * margin) / (float)columns;
+        var cellHeight = (height - 2 * margin) / (float)columns;
 
         using var bitmap = new SKBitmap(width, height);
         using var canvas = new SKCanvas(bitmap);
@@ -319,8 +315,8 @@ public sealed class FlashcardExporter : IFlashcardExporter
             for (var column = 0; column < columns; column++)
             {
                 var index = GetCardIndex(row, column, columns, flipEdge, front);
-                var left = margin + column * (cellWidth + gap);
-                var top = margin + row * (cellHeight + gap);
+                var left = margin + column * cellWidth;
+                var top = margin + row * cellHeight;
                 var rect = new SKRect(left, top, left + cellWidth, top + cellHeight);
                 canvas.DrawRect(rect, borderPaint);
                 if (index >= cards.Count)
