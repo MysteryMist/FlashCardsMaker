@@ -8,6 +8,7 @@ public partial class MeaningEntryViewModel : ObservableObject
 {
     private readonly Func<MeaningEntryViewModel, Task> _save;
     private CancellationTokenSource? _saveDelay;
+    private Task? _saveTask;
     private bool _isLoading;
 
     public MeaningEntryViewModel(CardMeaning meaning, Func<MeaningEntryViewModel, Task> save)
@@ -23,6 +24,17 @@ public partial class MeaningEntryViewModel : ObservableObject
 
     public CardMeaning Model { get; }
     public string PrimaryButtonLabel => IsPrimaryMeaning ? "Primary" : "Set primary";
+    public float PreviewFontSize { get; private set; } = 13;
+    public IReadOnlyList<string> StyleOptions { get; } = Enum.GetNames<MeaningStyle>();
+    public string StyleName
+    {
+        get => Style.ToString();
+        set
+        {
+            if (Enum.TryParse<MeaningStyle>(value, out var style) && Enum.IsDefined(style))
+                Style = style;
+        }
+    }
     public FontAttributes PreviewFontAttributes => Style is MeaningStyle.Bold or MeaningStyle.BoldUnderline
         ? FontAttributes.Bold
         : FontAttributes.None;
@@ -36,6 +48,11 @@ public partial class MeaningEntryViewModel : ObservableObject
     [ObservableProperty]
     public partial bool IsPrimaryMeaning { get; set; }
 
+    [ObservableProperty]
+    public partial bool IsDeleting { get; set; }
+
+    public bool CanEdit => !IsDeleting;
+
     public string PreviewBorderColor => IsPrimaryMeaning ? "#1F6F50" : "#303630";
 
     partial void OnIsPrimaryMeaningChanged(bool value)
@@ -44,6 +61,8 @@ public partial class MeaningEntryViewModel : ObservableObject
         OnPropertyChanged(nameof(PreviewBorderColor));
     }
 
+    partial void OnIsDeletingChanged(bool value) => OnPropertyChanged(nameof(CanEdit));
+
     [ObservableProperty]
     public partial MeaningStyle Style { get; set; }
 
@@ -51,21 +70,39 @@ public partial class MeaningEntryViewModel : ObservableObject
     partial void OnStyleChanged(MeaningStyle value)
     {
         QueueSave();
+        OnPropertyChanged(nameof(StyleName));
         OnPropertyChanged(nameof(PreviewFontAttributes));
         OnPropertyChanged(nameof(PreviewTextDecorations));
     }
 
     public void SetPrimaryWithoutSaving(bool value) => IsPrimaryMeaning = value;
 
+    public void SetPreviewFontSize(float value)
+    {
+        if (Math.Abs(PreviewFontSize - value) < 0.1f)
+            return;
+
+        PreviewFontSize = value;
+        OnPropertyChanged(nameof(PreviewFontSize));
+    }
+
     private void QueueSave()
     {
-        if (_isLoading)
+        if (_isLoading || IsDeleting)
             return;
 
         _saveDelay?.Cancel();
         _saveDelay?.Dispose();
         _saveDelay = new CancellationTokenSource();
-        _ = SaveAfterDelayAsync(_saveDelay.Token);
+        _saveTask = SaveAfterDelayAsync(_saveDelay.Token);
+    }
+
+    public async Task PrepareForDeletionAsync()
+    {
+        IsDeleting = true;
+        _saveDelay?.Cancel();
+        if (_saveTask is not null)
+            await _saveTask;
     }
 
     private async Task SaveAfterDelayAsync(CancellationToken cancellationToken)

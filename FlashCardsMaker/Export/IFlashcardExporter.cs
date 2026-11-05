@@ -8,7 +8,7 @@ public interface IFlashcardExporter
 {
     Task<ExportArtifact> GenerateAsync(Deck deck, IReadOnlyList<Flashcard> cards,
         IReadOnlyDictionary<int, IReadOnlyList<CardMeaning>> meaningsByCard,
-        PaperSize paperSize, GridLayout gridLayout, DuplexFlipEdge flipEdge,
+        PaperSize paperSize, PaperOrientation orientation, GridLayout gridLayout, DuplexFlipEdge flipEdge,
         ExportFormat format, ExportLayout exportLayout,
         CancellationToken cancellationToken = default);
 }

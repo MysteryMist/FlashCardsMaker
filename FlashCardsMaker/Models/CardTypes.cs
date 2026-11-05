@@ -96,6 +96,12 @@ public enum PaperSize
     Letter
 }
 
+public enum PaperOrientation
+{
+    Portrait,
+    Landscape
+}
+
 public enum GridLayout
 {
     ThreeByThree = 3,

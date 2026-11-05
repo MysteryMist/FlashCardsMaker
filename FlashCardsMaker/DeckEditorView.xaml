@@ -20,9 +20,10 @@
             </Grid>
             <VerticalStackLayout Spacing="8">
                 <Label Text="PRINT SHEET SETTINGS" FontSize="11" FontAttributes="Bold" TextColor="#A9C6B7" />
-                <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                <Grid ColumnDefinitions="*,*,*" ColumnSpacing="10">
                     <Picker Title="Paper size" ItemsSource="{Binding PaperSizes}" SelectedItem="{Binding SelectedPaperSize}" />
                     <Picker Grid.Column="1" Title="Card grid" ItemsSource="{Binding GridLayoutLabels}" SelectedItem="{Binding SelectedGridLayoutLabel}" />
+                    <Picker Grid.Column="2" Title="Paper orientation" ItemsSource="{Binding PaperOrientations}" SelectedItem="{Binding SelectedPaperOrientation}" />
                 </Grid>
                 <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
                     <Picker Title="Duplex flip edge" ItemsSource="{Binding FlipEdges}" SelectedItem="{Binding SelectedFlipEdge}" />
@@ -34,34 +35,67 @@
                     <Button Grid.Column="1" Text="Export deck data" Command="{Binding ExportDeckDataCommand}" BackgroundColor="{StaticResource AccentOrange}" TextColor="#121212" FontAttributes="Bold" />
                 </Grid>
             </VerticalStackLayout>
-            <VerticalStackLayout Spacing="10">
-                <Grid ColumnDefinitions="*,Auto">
+            <Border BackgroundColor="#1B1B1B" Stroke="#718078" StrokeThickness="2.5" StrokeShape="RoundRectangle 12" Padding="12">
+                <VerticalStackLayout Spacing="10">
+                <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="8">
                     <Label Text="Cards" FontSize="17" FontAttributes="Bold" VerticalOptions="Center" />
-                    <HorizontalStackLayout Grid.Column="1" Spacing="8">
-                        <Entry Placeholder="Front word / kanji" Text="{Binding NewCardFrontText}" WidthRequest="200" />
-                        <Button Text="Add front" Command="{Binding AddCardCommand}" BackgroundColor="#1F6F50" TextColor="#F5F5F5" />
-                    </HorizontalStackLayout>
+                    <Grid Grid.Row="1" Grid.ColumnSpan="2" ColumnDefinitions="*,Auto,*" ColumnSpacing="8">
+                        <Entry Placeholder="Front word / kanji" Text="{Binding NewCardFrontText}" FontSize="20" HeightRequest="54" HorizontalOptions="Fill" />
+                        <Button Grid.Column="1" Text="Add front" Command="{Binding AddCardCommand}" BackgroundColor="#1F6F50" TextColor="#F5F5F5" />
+                    </Grid>
                 </Grid>
                 <ScrollView Orientation="Horizontal" HeightRequest="82">
                     <HorizontalStackLayout Spacing="8" BindableLayout.ItemsSource="{Binding Cards}">
                         <BindableLayout.ItemTemplate>
                             <DataTemplate>
-                                <Border BackgroundColor="#242824" Stroke="{Binding SelectionStroke}" StrokeThickness="{Binding SelectionStrokeThickness}" StrokeShape="RoundRectangle 10" Padding="10">
-                                    <Border.GestureRecognizers>
-                                        <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type ContentPage}}, Path=BindingContext.SelectCardCommand}" CommandParameter="{Binding .}" />
-                                    </Border.GestureRecognizers>
-                                    <VerticalStackLayout Spacing="2" WidthRequest="92">
-                                        <Label Text="{Binding Number, StringFormat='{}{0:000}'}" FontSize="10" TextColor="#A9C6B7" />
-                                        <Label Text="{Binding FrontText}" FontSize="17" FontAttributes="Bold" LineBreakMode="TailTruncation" />
-                                    </VerticalStackLayout>
-                                </Border>
+                                <Grid WidthRequest="108" HeightRequest="82">
+                                    <Border BackgroundColor="{Binding SelectionBackgroundColor}" Stroke="{Binding SelectionStroke}" StrokeThickness="{Binding SelectionStrokeThickness}" StrokeShape="RoundRectangle 10" Padding="8">
+                                        <VerticalStackLayout Spacing="2">
+                                            <Grid ColumnDefinitions="*,Auto">
+                                                <Label Text="{Binding Number, StringFormat='{}{0:000}'}" FontSize="10" TextColor="#A9C6B7" />
+                                                <Label Grid.Column="1" Text="EDITING" IsVisible="{Binding IsSelected}" FontSize="8" FontAttributes="Bold" TextColor="#FF8C00" />
+                                            </Grid>
+                                            <Label Text="{Binding FrontText}" FontSize="17" FontAttributes="Bold" TextColor="{Binding SelectionTextColor}" LineBreakMode="TailTruncation" />
+                                        </VerticalStackLayout>
+                                    </Border>
+                                    <Button Text="" Command="{Binding Source={RelativeSource AncestorType={x:Type ContentPage}}, Path=BindingContext.SelectCardCommand}" CommandParameter="{Binding .}" BackgroundColor="Transparent" BorderWidth="0" CornerRadius="10" Padding="0" MinimumHeightRequest="0" MinimumWidthRequest="0">
+                                        <VisualStateManager.VisualStateGroups>
+                                            <VisualStateGroupList>
+                                                <VisualStateGroup x:Name="CommonStates">
+                                                    <VisualState x:Name="Normal">
+                                                        <VisualState.Setters>
+                                                            <Setter Property="BackgroundColor" Value="Transparent" />
+                                                            <Setter Property="Opacity" Value="1" />
+                                                            <Setter Property="Scale" Value="1" />
+                                                        </VisualState.Setters>
+                                                    </VisualState>
+                                                    <VisualState x:Name="PointerOver">
+                                                        <VisualState.Setters>
+                                                            <Setter Property="BackgroundColor" Value="#1AFFFFFF" />
+                                                        </VisualState.Setters>
+                                                    </VisualState>
+                                                    <VisualState x:Name="Pressed">
+                                                        <VisualState.Setters>
+                                                            <Setter Property="BackgroundColor" Value="#44F28C28" />
+                                                            <Setter Property="Opacity" Value="1" />
+                                                            <Setter Property="Scale" Value="0.97" />
+                                                        </VisualState.Setters>
+                                                    </VisualState>
+                                                </VisualStateGroup>
+                                            </VisualStateGroupList>
+                                        </VisualStateManager.VisualStateGroups>
+                                    </Button>
+                                </Grid>
                             </DataTemplate>
                         </BindableLayout.ItemTemplate>
                     </HorizontalStackLayout>
                 </ScrollView>
-            </VerticalStackLayout>
+                </VerticalStackLayout>
+            </Border>
             <Grid IsVisible="{Binding HasSelectedCard}" ColumnDefinitions="*,*" ColumnSpacing="16">
-                <VerticalStackLayout Spacing="14">
+                <VerticalStackLayout Spacing="12">
+                    <Border BackgroundColor="#1B1B1B" Stroke="#718078" StrokeThickness="2.5" StrokeShape="RoundRectangle 12" Padding="12">
+                    <VerticalStackLayout Spacing="14">
                     <Grid ColumnDefinitions="*,Auto">
                         <Label Text="Card details" FontSize="17" FontAttributes="Bold" />
                         <Button Grid.Column="1" Text="Remove card" Command="{Binding DeleteCardCommand}" BackgroundColor="#462727" TextColor="#F5F5F5" Padding="10,6" FontSize="11" />
@@ -74,6 +108,10 @@
                     </Grid>
                     <Picker IsVisible="{Binding IsAdverbDeck}" Title="Adverb classification" ItemsSource="{Binding AdverbClassifications}" SelectedItem="{Binding AdverbClassification}" />
                     <Picker IsVisible="{Binding IsNounDeck}" Title="Noun category" ItemsSource="{Binding NounCategories}" SelectedItem="{Binding NounCategory}" />
+                    </VerticalStackLayout>
+                    </Border>
+                    <Border BackgroundColor="#1B1B1B" Stroke="#718078" StrokeThickness="2.5" StrokeShape="RoundRectangle 12" Padding="12">
+                    <VerticalStackLayout Spacing="10">
                     <Grid ColumnDefinitions="*,Auto">
                         <Label Text="Meanings" FontSize="15" FontAttributes="Bold" />
                         <Button Grid.Column="1" Text="＋ Meaning" Command="{Binding AddMeaningCommand}" BackgroundColor="#254235" TextColor="#F5F5F5" Padding="10,6" FontSize="11" />
@@ -81,18 +119,20 @@
                     <VerticalStackLayout Spacing="8" BindableLayout.ItemsSource="{Binding Meanings}">
                         <BindableLayout.ItemTemplate>
                             <DataTemplate>
-                                <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="8" RowSpacing="4">
+                                <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="8" RowSpacing="4" IsEnabled="{Binding CanEdit}">
                                     <Entry Placeholder="Meaning" Text="{Binding Text}" />
                                     <Button Grid.Column="1" Text="×" Command="{Binding Source={RelativeSource AncestorType={x:Type ContentPage}}, Path=BindingContext.DeleteMeaningCommand}" CommandParameter="{Binding .}" BackgroundColor="#462727" TextColor="#F5F5F5" Padding="12,6" />
                                     <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
                                         <Button Text="{Binding PrimaryButtonLabel}" Command="{Binding Source={RelativeSource AncestorType={x:Type ContentPage}}, Path=BindingContext.SetPrimaryMeaningCommand}" CommandParameter="{Binding .}" BackgroundColor="#303630" TextColor="#F5F5F5" Padding="8,4" FontSize="10" />
-                                        <Picker Grid.Column="1" Title="Display style" ItemsSource="{Binding Source={RelativeSource AncestorType={x:Type ContentPage}}, Path=BindingContext.MeaningStyles}" SelectedItem="{Binding Style}" FontSize="11" />
+                                        <Picker Grid.Column="1" Title="Display style" ItemsSource="{Binding StyleOptions}" SelectedItem="{Binding StyleName, Mode=TwoWay}" FontSize="11" />
                                         <Label Grid.Column="2" Text="PRIMARY" IsVisible="{Binding IsPrimaryMeaning}" TextColor="#1F6F50" FontSize="9" VerticalOptions="Center" />
                                     </Grid>
                                 </Grid>
                             </DataTemplate>
                         </BindableLayout.ItemTemplate>
                     </VerticalStackLayout>
+                    </VerticalStackLayout>
+                    </Border>
                 </VerticalStackLayout>
                 <VerticalStackLayout Grid.Column="1" Spacing="10">
                     <Grid ColumnDefinitions="*,Auto">
@@ -101,20 +141,22 @@
                     </Grid>
                     <Border BackgroundColor="#F5F5F5" Stroke="{Binding CardStatusColor}" StrokeThickness="3" StrokeShape="RoundRectangle 12" Padding="16" HeightRequest="180">
                         <Grid RowDefinitions="Auto,*">
-                            <Label Text="{Binding CardDisplayNumber}" TextColor="#C62828" FontFamily="Times New Roman" FontSize="10" FontAttributes="Bold" HorizontalTextAlignment="End" />
+                            <Label Text="{Binding CardDisplayNumber}" TextColor="#C62828" FontFamily="Times New Roman" FontSize="11" FontAttributes="Bold" HorizontalTextAlignment="End" />
                             <Label Grid.Row="1" FormattedText="{Binding FrontPreviewText}" TextColor="#121212" FontSize="34" FontAttributes="Bold" HorizontalTextAlignment="Center" VerticalTextAlignment="Center" />
                         </Grid>
                     </Border>
                     <Border BackgroundColor="#F5F5F5" Stroke="{Binding CardStatusColor}" StrokeThickness="3" StrokeShape="RoundRectangle 12" Padding="16" HeightRequest="220">
                         <VerticalStackLayout Spacing="8">
                             <Label Text="{Binding BackPreviewMeta}" TextColor="{Binding BackPreviewMetaColor}" FontFamily="Times New Roman" FontSize="11" FontAttributes="Bold" />
-                            <Label Text="{Binding BackPreviewNumber}" TextColor="#C62828" FontFamily="Times New Roman" FontSize="21" FontAttributes="Bold" />
-                            <Label Text="{Binding BackPreviewReading}" TextColor="#C62828" FontFamily="MS Gothic" FontSize="21" FontAttributes="Bold" />
-                            <VerticalStackLayout Spacing="3" BindableLayout.ItemsSource="{Binding Meanings}">
+                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                                <Label Text="{Binding BackPreviewNumber}" TextColor="#C62828" FontFamily="Times New Roman" FontSize="21" FontAttributes="Bold" />
+                                <Label Grid.Column="1" Text="{Binding BackPreviewReading}" TextColor="#C62828" FontFamily="MS Gothic" FontSize="21" FontAttributes="Bold" />
+                            </Grid>
+                                <VerticalStackLayout Spacing="2" BindableLayout.ItemsSource="{Binding Meanings}">
                                 <BindableLayout.ItemTemplate>
                                     <DataTemplate>
-                                        <Border BackgroundColor="#242824" Stroke="{Binding PreviewBorderColor}" StrokeThickness="2" StrokeShape="RoundRectangle 10" Padding="10">
-                                            <Label Text="{Binding Text, StringFormat='•  {0}'}" TextColor="#121212" FontFamily="Times New Roman" FontSize="13" FontAttributes="{Binding PreviewFontAttributes}" TextDecorations="{Binding PreviewTextDecorations}" />
+                                            <Border BackgroundColor="#F5F5F5" Stroke="{Binding PreviewBorderColor}" StrokeThickness="2" StrokeShape="RoundRectangle 10" Padding="4,2">
+                                                <Label Text="{Binding Text, StringFormat='•  {0}'}" TextColor="#121212" FontFamily="Times New Roman" FontSize="{Binding PreviewFontSize}" FontAttributes="{Binding PreviewFontAttributes}" TextDecorations="{Binding PreviewTextDecorations}" />
                                         </Border>
                                     </DataTemplate>
                                 </BindableLayout.ItemTemplate>

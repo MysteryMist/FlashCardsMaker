@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.Input;
 using FlashCardsMaker.Data;
 using FlashCardsMaker.Export;
 using FlashCardsMaker.Models;
+using Microsoft.Maui.Storage;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -12,6 +13,11 @@ namespace FlashCardsMaker.ViewModels;
 
 public partial class MainViewModel : ObservableObject
 {
+    private const string LastSelectedCardPreferencePrefix = "LastSelectedCard.";
+
+    private static string GetLastSelectedCardPreferenceKey(int deckId) =>
+        $"{LastSelectedCardPreferencePrefix}{deckId}";
+
     private static readonly JsonSerializerOptions DeckTransferJsonOptions = new()
     {
         WriteIndented = true,
@@ -51,6 +57,7 @@ public partial class MainViewModel : ObservableObject
         JlptFilterOptions = new(JlptLevels.Select(level => new FilterOptionViewModel(level, RefreshFilteredDecks)));
         CardTypeFilterOptions = new(Enum.GetNames<CardType>().Select(type => new FilterOptionViewModel(type, RefreshFilteredDecks)));
         PaperSizes = Enum.GetValues<PaperSize>();
+        PaperOrientations = Enum.GetValues<PaperOrientation>();
         FlipEdges = ["Long edge", "Short edge"];
         GridLayoutLabels = ["3 × 3", "4 × 4", "5 × 5"];
         ExportFormatLabels = ["PDF", "PNG sheets (ZIP)", "JPEG sheets (ZIP)"];
@@ -72,6 +79,7 @@ public partial class MainViewModel : ObservableObject
     public ObservableCollection<FilterOptionViewModel> JlptFilterOptions { get; }
     public ObservableCollection<FilterOptionViewModel> CardTypeFilterOptions { get; }
     public IReadOnlyList<PaperSize> PaperSizes { get; }
+    public IReadOnlyList<PaperOrientation> PaperOrientations { get; }
     public IReadOnlyList<string> FlipEdges { get; }
     public IReadOnlyList<string> GridLayoutLabels { get; }
     public IReadOnlyList<string> ExportFormatLabels { get; }
@@ -152,6 +160,7 @@ public partial class MainViewModel : ObservableObject
     public partial bool HasNoSearchResults { get; set; }
 
     private PaperSize _selectedPaperSize = PaperSize.A4;
+    private PaperOrientation _selectedPaperOrientation = PaperOrientation.Landscape;
     private string _selectedGridLayoutLabel = "3 × 3";
     private string _selectedFlipEdge = "Long edge";
     private string _selectedExportFormatLabel = "PDF";
@@ -161,6 +170,12 @@ public partial class MainViewModel : ObservableObject
     {
         get => _selectedPaperSize;
         set => SetProperty(ref _selectedPaperSize, value);
+    }
+
+    public PaperOrientation SelectedPaperOrientation
+    {
+        get => _selectedPaperOrientation;
+        set => SetProperty(ref _selectedPaperOrientation, value);
     }
 
     public string DeckSearchText
@@ -212,6 +227,25 @@ public partial class MainViewModel : ObservableObject
         : $"{SelectedCard.Number}.";
 
     public string BackPreviewReading => Hiragana;
+
+    private void UpdateMeaningPreviewFontSize()
+    {
+        var fontSize = MeaningFontSizer.CalculateSize(
+            Meanings.Select(meaning => meaning.Text), 240, 100, 13, 6, 4, 2, 1.2f);
+        foreach (var meaning in Meanings)
+            meaning.SetPreviewFontSize(fontSize);
+    }
+
+    private MeaningEntryViewModel CreateMeaningEntryViewModel(CardMeaning meaning)
+    {
+        var viewModel = new MeaningEntryViewModel(meaning, SaveMeaningEntryAsync);
+        viewModel.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(MeaningEntryViewModel.Text))
+                UpdateMeaningPreviewFontSize();
+        };
+        return viewModel;
+    }
 
     public FormattedString FrontPreviewText
     {
@@ -387,14 +421,22 @@ public partial class MainViewModel : ObservableObject
             SelectedCard = null;
             HasSelectedCard = false;
 
-            foreach (var card in await _repository.GetCardsAsync(deck.Id))
+            foreach (var card in (await _repository.GetCardsAsync(deck.Id)).OrderByDescending(card => card.Number))
             {
                 var meanings = await _repository.GetMeaningsAsync(card.Id);
                 Cards.Add(new CardListItemViewModel(card, FlashcardRules.GetStatus(deck.CardType, card, meanings)));
             }
 
             if (Cards.Count > 0)
-                await LoadCardAsync(Cards[0].Card);
+            {
+                var savedCardId = Preferences.Default.Get(GetLastSelectedCardPreferenceKey(deck.Id), 0);
+                var cardToRestore = Cards.FirstOrDefault(item => item.Card.Id == savedCardId) ?? Cards[0];
+                await LoadCardAsync(cardToRestore.Card);
+            }
+            else
+            {
+                Preferences.Default.Remove(GetLastSelectedCardPreferenceKey(deck.Id));
+            }
 
             _isLoading = false;
             OnPropertyChanged(nameof(CardDisplayNumber));
@@ -469,6 +511,7 @@ public partial class MainViewModel : ObservableObject
             return;
 
         var deckId = SelectedDeck.Deck.Id;
+        Preferences.Default.Remove(GetLastSelectedCardPreferenceKey(deckId));
         CancelScheduledSaves();
         SelectedDeck.IsExpanded = false;
         await _repository.DeleteDeckAsync(deckId);
@@ -491,7 +534,7 @@ public partial class MainViewModel : ObservableObject
         await SaveSelectedDeckAsync();
         var card = await _repository.CreateCardAsync(SelectedDeck.Deck.Id, NewCardFrontText);
         NewCardFrontText = string.Empty;
-        Cards.Add(new CardListItemViewModel(card, CardStatus.MissingInformation));
+        Cards.Insert(0, new CardListItemViewModel(card, CardStatus.MissingInformation));
         await LoadCardAsync(card);
         await RefreshDecksAsync();
     }
@@ -526,6 +569,8 @@ public partial class MainViewModel : ObservableObject
         {
             FrontText = string.Empty;
             Hiragana = string.Empty;
+            if (SelectedDeck is not null)
+                Preferences.Default.Remove(GetLastSelectedCardPreferenceKey(SelectedDeck.Deck.Id));
         }
 
         await RefreshDecksAsync();
@@ -542,11 +587,13 @@ public partial class MainViewModel : ObservableObject
         var meaning = new CardMeaning
         {
             CardId = SelectedCard.Id,
-            SortOrder = Meanings.Count
+            SortOrder = Meanings.Count,
+            Style = MeaningStyle.Normal
         };
 
         await _repository.SaveMeaningAsync(meaning);
-        Meanings.Add(new MeaningEntryViewModel(meaning, SaveMeaningEntryAsync));
+        Meanings.Add(CreateMeaningEntryViewModel(meaning));
+        UpdateMeaningPreviewFontSize();
         UpdateCardStatus();
         MeaningAdded?.Invoke(this, EventArgs.Empty);
     }
@@ -554,11 +601,22 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private async Task DeleteMeaningAsync(MeaningEntryViewModel? meaning)
     {
-        if (meaning is null)
+        if (meaning is null || !Meanings.Contains(meaning))
             return;
 
-        await _repository.DeleteMeaningAsync(meaning.Model.Id);
+        try
+        {
+            await meaning.PrepareForDeletionAsync();
+            await _repository.DeleteMeaningAsync(meaning.Model.Id);
+        }
+        catch
+        {
+            meaning.IsDeleting = false;
+            throw;
+        }
+
         Meanings.Remove(meaning);
+        UpdateMeaningPreviewFontSize();
         UpdateCardStatus();
         await RefreshDecksAsync();
     }
@@ -645,7 +703,7 @@ public partial class MainViewModel : ObservableObject
         IsBusy = true;
         try
         {
-            var artifact = await _exporter.GenerateAsync(deck, cards, meaningsByCard, SelectedPaperSize,
+            var artifact = await _exporter.GenerateAsync(deck, cards, meaningsByCard, SelectedPaperSize, SelectedPaperOrientation,
                 gridLayout, flipEdge, format, exportLayout);
             await using var content = new MemoryStream(artifact.Content);
             var result = await FileSaver.Default.SaveAsync(artifact.FileName, content);
@@ -908,6 +966,8 @@ public partial class MainViewModel : ObservableObject
             cardItem.IsSelected = cardItem.Card.Id == card.Id;
 
         SelectedCard = card;
+        if (SelectedDeck is not null)
+            Preferences.Default.Set(GetLastSelectedCardPreferenceKey(SelectedDeck.Deck.Id), card.Id);
         HasSelectedCard = true;
         FrontText = card.FrontText;
         Hiragana = card.Hiragana;

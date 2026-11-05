@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Text;
 using FlashCardsMaker.Models;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
@@ -24,14 +25,14 @@ public sealed class FlashcardExporter : IFlashcardExporter
 
     public Task<ExportArtifact> GenerateAsync(Deck deck, IReadOnlyList<Flashcard> cards,
         IReadOnlyDictionary<int, IReadOnlyList<CardMeaning>> meaningsByCard,
-        PaperSize paperSize, GridLayout gridLayout, DuplexFlipEdge flipEdge,
+        PaperSize paperSize, PaperOrientation orientation, GridLayout gridLayout, DuplexFlipEdge flipEdge,
         ExportFormat format, ExportLayout exportLayout,
         CancellationToken cancellationToken = default) =>
-        Task.Run(() => Generate(deck, cards, meaningsByCard, paperSize, gridLayout, flipEdge, format, exportLayout, cancellationToken), cancellationToken);
+        Task.Run(() => Generate(deck, cards, meaningsByCard, paperSize, orientation, gridLayout, flipEdge, format, exportLayout, cancellationToken), cancellationToken);
 
     private static ExportArtifact Generate(Deck deck, IReadOnlyList<Flashcard> cards,
         IReadOnlyDictionary<int, IReadOnlyList<CardMeaning>> meaningsByCard,
-        PaperSize paperSize, GridLayout gridLayout, DuplexFlipEdge flipEdge, ExportFormat format,
+        PaperSize paperSize, PaperOrientation orientation, GridLayout gridLayout, DuplexFlipEdge flipEdge, ExportFormat format,
         ExportLayout exportLayout, CancellationToken cancellationToken)
     {
         if (exportLayout == ExportLayout.BothSeparateFiles)
@@ -41,14 +42,14 @@ public sealed class FlashcardExporter : IFlashcardExporter
                 var output = new MemoryStream();
                 using (var archive = new ZipArchive(output, ZipArchiveMode.Create, true))
                 {
-                    AddZipFile(archive, $"{SafeName(deck.Name)}.pdf", CreatePdf(deck, cards, meaningsByCard, paperSize, gridLayout, flipEdge, cancellationToken, ExportLayout.FrontOnly));
-                    AddZipFile(archive, $"{SafeName(deck.Name)} (Meaning).pdf", CreatePdf(deck, cards, meaningsByCard, paperSize, gridLayout, flipEdge, cancellationToken, ExportLayout.BackOnly));
+                    AddZipFile(archive, $"{SafeName(deck.Name)}.pdf", CreatePdf(deck, cards, meaningsByCard, paperSize, orientation, gridLayout, flipEdge, cancellationToken, ExportLayout.FrontOnly));
+                    AddZipFile(archive, $"{SafeName(deck.Name)} (Meaning).pdf", CreatePdf(deck, cards, meaningsByCard, paperSize, orientation, gridLayout, flipEdge, cancellationToken, ExportLayout.BackOnly));
                 }
 
                 return new ExportArtifact($"{SafeName(deck.Name)}-export.zip", output.ToArray());
             }
 
-            return CreateRasterArchive(deck, cards, meaningsByCard, paperSize, gridLayout, flipEdge,
+            return CreateRasterArchive(deck, cards, meaningsByCard, paperSize, orientation, gridLayout, flipEdge,
                 format == ExportFormat.PNG ? SKEncodedImageFormat.Png : SKEncodedImageFormat.Jpeg,
                 format == ExportFormat.PNG ? "png" : "jpg", cancellationToken, ExportLayout.BothSeparateFiles);
         }
@@ -56,10 +57,10 @@ public sealed class FlashcardExporter : IFlashcardExporter
         return format switch
         {
             ExportFormat.PDF => new ExportArtifact($"{SafeName(deck.Name)}{(exportLayout == ExportLayout.BackOnly ? " (Meaning)" : string.Empty)}.pdf",
-                CreatePdf(deck, cards, meaningsByCard, paperSize, gridLayout, flipEdge, cancellationToken, exportLayout)),
-            ExportFormat.PNG => CreateRasterArchive(deck, cards, meaningsByCard, paperSize, gridLayout, flipEdge,
+                CreatePdf(deck, cards, meaningsByCard, paperSize, orientation, gridLayout, flipEdge, cancellationToken, exportLayout)),
+            ExportFormat.PNG => CreateRasterArchive(deck, cards, meaningsByCard, paperSize, orientation, gridLayout, flipEdge,
                 SKEncodedImageFormat.Png, "png", cancellationToken, exportLayout),
-            ExportFormat.JPEG => CreateRasterArchive(deck, cards, meaningsByCard, paperSize, gridLayout, flipEdge,
+            ExportFormat.JPEG => CreateRasterArchive(deck, cards, meaningsByCard, paperSize, orientation, gridLayout, flipEdge,
                 SKEncodedImageFormat.Jpeg, "jpg", cancellationToken, exportLayout),
             _ => throw new ArgumentOutOfRangeException(nameof(format))
         };
@@ -74,14 +75,16 @@ public sealed class FlashcardExporter : IFlashcardExporter
 
     private static byte[] CreatePdf(Deck deck, IReadOnlyList<Flashcard> cards,
         IReadOnlyDictionary<int, IReadOnlyList<CardMeaning>> meaningsByCard,
-        PaperSize paperSize, GridLayout layout, DuplexFlipEdge flipEdge,
+        PaperSize paperSize, PaperOrientation orientation, GridLayout layout, DuplexFlipEdge flipEdge,
         CancellationToken cancellationToken, ExportLayout exportLayout)
     {
         var columns = (int)layout;
         var capacity = columns * columns;
-        var size = paperSize == PaperSize.A4 ? PageSizes.A4 : PageSizes.Letter;
-        var heightPoints = paperSize == PaperSize.A4 ? 841.89f : 792f;
-        var rowHeight = (heightPoints - (2 * PageMarginPoints)) / columns;
+        var pageWidth = paperSize == PaperSize.A4 ? PageSizes.A4.Width : PageSizes.Letter.Width;
+        var pageHeight = paperSize == PaperSize.A4 ? PageSizes.A4.Height : PageSizes.Letter.Height;
+        if (orientation == PaperOrientation.Landscape)
+            (pageWidth, pageHeight) = (pageHeight, pageWidth);
+        var size = new PageSize(pageWidth, pageHeight);
         var selectedSides = exportLayout switch
         {
             ExportLayout.FrontOnly => new[] { true },
@@ -91,20 +94,20 @@ public sealed class FlashcardExporter : IFlashcardExporter
 
         var document = Document.Create(documentBuilder =>
         {
-            for (var batchStart = 0; batchStart < cards.Count; batchStart += capacity)
+            foreach (var front in selectedSides)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                var batch = cards.Skip(batchStart).Take(capacity).ToArray();
-                foreach (var front in selectedSides)
+                for (var batchStart = 0; batchStart < cards.Count; batchStart += capacity)
                 {
-                    AddPdfPage(documentBuilder, size, rowHeight, deck, batch, meaningsByCard, columns, flipEdge, front);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var batch = cards.Skip(batchStart).Take(capacity).ToArray();
+                    AddPdfPage(documentBuilder, size, deck, batch, meaningsByCard, columns, flipEdge, front);
                 }
             }
         });
         return document.GeneratePdf();
     }
 
-    private static void AddPdfPage(IDocumentContainer document, PageSize size, float rowHeight, Deck deck,
+    private static void AddPdfPage(IDocumentContainer document, PageSize size, Deck deck,
         IReadOnlyList<Flashcard> cards, IReadOnlyDictionary<int, IReadOnlyList<CardMeaning>> meaningsByCard,
         int columns, DuplexFlipEdge flipEdge, bool front)
     {
@@ -153,18 +156,20 @@ public sealed class FlashcardExporter : IFlashcardExporter
         {
             if (front)
             {
-                column.Item().AlignLeft().Text($"{deck.Name.ToUpperInvariant()} {card.Number:000}")
+                column.Item().AlignRight().Text($"{deck.Name.ToUpperInvariant()} {card.Number:000}")
                     .FontFamily(TitleFontFamilies)
-                    .FontSize(10)
+                    .FontSize(11)
                     .Bold()
                     .FontColor(PdfColors.Red.Medium);
+                var frontFontSize = FrontTextFontSizer.CalculateSize(
+                    card.FrontText, CardWidthPoints - 32, CardHeightPoints - 48, 62);
                 column.Item().ExtendVertical().AlignMiddle().AlignCenter().Text(text =>
                 {
                     foreach (var run in SplitByScript(card.FrontText))
                     {
                         text.Span(run.Text)
                             .FontFamily(run.IsJapanese ? JapaneseFontFamilies : TitleFontFamilies)
-                            .FontSize(62)
+                            .FontSize(frontFontSize)
                             .Bold();
                     }
                 });
@@ -177,23 +182,30 @@ public sealed class FlashcardExporter : IFlashcardExporter
                 .FontSize(10)
                 .Bold()
                 .FontColor(kindColor);
-            column.Item().PaddingTop(4).Text($"{card.Number}.")
-                .FontFamily(TitleFontFamilies)
-                .FontSize(16)
-                .Bold()
-                .FontColor(PdfColors.Red.Medium);
-            column.Item().Text(card.Hiragana)
-                .FontFamily(JapaneseFontFamilies)
-                .FontSize(16)
-                .Bold()
-                .FontColor(PdfColors.Red.Medium);
-            foreach (var meaning in meanings.Where(item => !string.IsNullOrWhiteSpace(item.Text)))
+            column.Item().PaddingTop(4).Row(row =>
+            {
+                row.AutoItem().PaddingRight(6).Text($"{card.Number}.")
+                    .FontFamily(TitleFontFamilies)
+                    .FontSize(16)
+                    .Bold()
+                    .FontColor(PdfColors.Red.Medium);
+                row.AutoItem().Text(card.Hiragana)
+                    .FontFamily(JapaneseFontFamilies)
+                    .FontSize(16)
+                    .Bold()
+                    .FontColor(PdfColors.Red.Medium);
+            });
+            var visibleMeanings = meanings.Where(item => !string.IsNullOrWhiteSpace(item.Text)).ToArray();
+            var meaningFontSize = MeaningFontSizer.CalculateSize(
+                visibleMeanings.Select(meaning => meaning.Text), CardWidthPoints - 28, CardHeightPoints - 82,
+                16, 6, 3, 0, 1.2f);
+            foreach (var meaning in visibleMeanings)
             {
                 column.Item().PaddingTop(3).Text(text =>
                 {
                     var span = text.Span($"•  {meaning.Text}")
                         .FontFamily(InformationFontFamilies)
-                        .FontSize(16);
+                        .FontSize(meaningFontSize);
                     if (meaning.Style is MeaningStyle.Bold or MeaningStyle.BoldUnderline)
                         span.Bold();
                     if (meaning.Style is MeaningStyle.Underline or MeaningStyle.BoldUnderline)
@@ -227,7 +239,7 @@ public sealed class FlashcardExporter : IFlashcardExporter
 
     private static ExportArtifact CreateRasterArchive(Deck deck, IReadOnlyList<Flashcard> cards,
         IReadOnlyDictionary<int, IReadOnlyList<CardMeaning>> meaningsByCard,
-        PaperSize paperSize, GridLayout layout, DuplexFlipEdge flipEdge,
+        PaperSize paperSize, PaperOrientation orientation, GridLayout layout, DuplexFlipEdge flipEdge,
         SKEncodedImageFormat imageFormat, string extension, CancellationToken cancellationToken,
         ExportLayout exportLayout = ExportLayout.BothInOneFile)
     {
@@ -236,7 +248,6 @@ public sealed class FlashcardExporter : IFlashcardExporter
         {
             var columns = (int)layout;
             var capacity = columns * columns;
-            var batchNumber = 0;
             var sides = exportLayout switch
             {
                 ExportLayout.FrontOnly => new[] { true },
@@ -244,15 +255,15 @@ public sealed class FlashcardExporter : IFlashcardExporter
                 _ => new[] { true, false }
             };
 
-            for (var batchStart = 0; batchStart < cards.Count; batchStart += capacity)
+            foreach (var front in sides)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                batchNumber++;
-                var batch = cards.Skip(batchStart).Take(capacity).ToArray();
-                foreach (var front in sides)
+                var batchNumber = 0;
+                for (var batchStart = 0; batchStart < cards.Count; batchStart += capacity)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    var data = RenderRasterSheet(deck, batch, meaningsByCard, paperSize, columns, flipEdge, front, imageFormat);
+                    batchNumber++;
+                    var batch = cards.Skip(batchStart).Take(capacity).ToArray();
+                    var data = RenderRasterSheet(deck, batch, meaningsByCard, paperSize, orientation, columns, flipEdge, front, imageFormat);
                     var side = front ? "front" : "back";
                     var name = exportLayout switch
                     {
@@ -277,10 +288,12 @@ public sealed class FlashcardExporter : IFlashcardExporter
 
     private static byte[] RenderRasterSheet(Deck deck, IReadOnlyList<Flashcard> cards,
         IReadOnlyDictionary<int, IReadOnlyList<CardMeaning>> meaningsByCard,
-        PaperSize paperSize, int columns, DuplexFlipEdge flipEdge, bool front, SKEncodedImageFormat imageFormat)
+        PaperSize paperSize, PaperOrientation orientation, int columns, DuplexFlipEdge flipEdge, bool front, SKEncodedImageFormat imageFormat)
     {
         var widthPoints = paperSize == PaperSize.A4 ? 595.28f : 612f;
         var heightPoints = paperSize == PaperSize.A4 ? 841.89f : 792f;
+        if (orientation == PaperOrientation.Landscape)
+            (widthPoints, heightPoints) = (heightPoints, widthPoints);
         var scale = RasterDpi / 72f;
         var width = (int)Math.Round(widthPoints * scale);
         var height = (int)Math.Round(heightPoints * scale);
@@ -334,19 +347,22 @@ public sealed class FlashcardExporter : IFlashcardExporter
         var right = rect.Right - padding;
         if (front)
         {
-            accentFont.Size = rect.Width * 0.035f;
+            accentFont.Size = rect.Width * 0.04f;
             accentFont.Embolden = true;
             accentPaint.Color = new SKColor(198, 40, 40);
             canvas.DrawText($"{deck.Name.ToUpperInvariant()} {card.Number:000}", right,
                 rect.Top + padding + accentFont.Size, SKTextAlign.Right, accentFont, accentPaint);
             accentFont.Embolden = false;
             accentPaint.Color = new SKColor(31, 111, 80);
-            textFont.Size = Math.Clamp(rect.Width * 0.15f, 44, 110);
+            var maximumFrontFontSize = Math.Clamp(rect.Width * 0.15f, 44, 110);
+            var availableFrontHeight = rect.Height - (padding * 2) - (accentFont.Size * 1.5f);
+            textFont.Size = FrontTextFontSizer.CalculateSize(
+                card.FrontText, right - left, availableFrontHeight, maximumFrontFontSize);
             textFont.Typeface = japaneseTypeface;
             accentFont.Size = textFont.Size;
             accentFont.Typeface = titleTypeface;
             DrawCenteredMixed(canvas, card.FrontText, (left + right) / 2,
-                (rect.Top + rect.Bottom) / 2, textFont, accentFont, textPaint);
+                (rect.Top + rect.Bottom) / 2, textFont, accentFont, textPaint, right - left);
             return;
         }
 
@@ -367,20 +383,51 @@ public sealed class FlashcardExporter : IFlashcardExporter
             SKTextAlign.Left, textFont, textPaint);
         textPaint.Color = SKColors.Black;
         textFont.Typeface = titleTypeface;
-        textFont.Size = rect.Width * 0.045f;
-        baseline += textFont.Size * 2.2f;
-        foreach (var meaning in meanings.Where(item => !string.IsNullOrWhiteSpace(item.Text)))
+        var maximumMeaningFontSize = rect.Width * 0.045f;
+        baseline += maximumMeaningFontSize * 2.2f;
+        var visibleMeanings = meanings.Where(item => !string.IsNullOrWhiteSpace(item.Text)).ToArray();
+        var meaningFontSize = MeaningFontSizer.CalculateSize(
+            visibleMeanings.Select(meaning => meaning.Text), right - left, rect.Bottom - padding - baseline,
+            maximumMeaningFontSize, rect.Width * 0.02f, 0, 3, 1.2f);
+        textFont.Size = meaningFontSize;
+        foreach (var meaning in visibleMeanings)
         {
             textFont.Embolden = meaning.Style is MeaningStyle.Bold or MeaningStyle.BoldUnderline;
             var text = $"•  {meaning.Text}";
-            canvas.DrawText(text, left, baseline, SKTextAlign.Left, textFont, textPaint);
-            if (meaning.Style is MeaningStyle.Underline or MeaningStyle.BoldUnderline)
-                canvas.DrawLine(left, baseline + 4, left + textFont.MeasureText(text), baseline + 4, underlinePaint);
-            baseline += textFont.Size * 1.65f;
-            if (baseline > rect.Bottom - padding)
-                break;
+            foreach (var line in WrapRasterText(text, textFont, right - left))
+            {
+                canvas.DrawText(line, left, baseline, SKTextAlign.Left, textFont, textPaint);
+                if (meaning.Style is MeaningStyle.Underline or MeaningStyle.BoldUnderline)
+                    canvas.DrawLine(left, baseline + 4, left + textFont.MeasureText(line), baseline + 4, underlinePaint);
+                baseline += textFont.Size * 1.2f;
+            }
+            baseline += 3;
         }
         textFont.Embolden = false;
+    }
+
+    private static IReadOnlyList<string> WrapRasterText(string text, SKFont font, float maxWidth)
+    {
+        var lines = new List<string>();
+        var line = new StringBuilder();
+        foreach (var character in text)
+        {
+            var candidate = line.ToString() + character;
+            if (line.Length > 0 && font.MeasureText(candidate) > maxWidth)
+            {
+                lines.Add(line.ToString().TrimEnd());
+                line.Clear();
+                if (char.IsWhiteSpace(character))
+                    continue;
+            }
+
+            line.Append(character);
+        }
+
+        if (line.Length > 0)
+            lines.Add(line.ToString().TrimEnd());
+
+        return lines;
     }
 
     private static void DrawCentered(SKCanvas canvas, string text, float centerX, float baseline, SKFont font, SKPaint paint)
@@ -389,10 +436,17 @@ public sealed class FlashcardExporter : IFlashcardExporter
     }
 
     private static void DrawCenteredMixed(SKCanvas canvas, string text, float centerX, float baseline,
-        SKFont japaneseFont, SKFont titleFont, SKPaint paint)
+        SKFont japaneseFont, SKFont titleFont, SKPaint paint, float maximumWidth)
     {
         var runs = SplitByScript(text).ToArray();
         var width = runs.Sum(run => (run.IsJapanese ? japaneseFont : titleFont).MeasureText(run.Text));
+        if (width > maximumWidth)
+        {
+            var scale = maximumWidth * 0.98f / width;
+            japaneseFont.Size *= scale;
+            titleFont.Size *= scale;
+            width *= scale;
+        }
         var x = centerX - width / 2;
 
         foreach (var run in runs)

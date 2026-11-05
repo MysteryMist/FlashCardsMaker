@@ -27,13 +27,17 @@ public partial class CardListItemViewModel : ObservableObject
     [ObservableProperty]
     public partial bool IsSelected { get; set; }
 
-    public string SelectionStroke => IsSelected ? "#F28C28" : "#536452";
-    public double SelectionStrokeThickness => IsSelected ? 3 : 1.5;
+    public string SelectionStroke => IsSelected ? "#FF8C00" : "#7C8980";
+    public double SelectionStrokeThickness => IsSelected ? 4 : 2.5;
+    public string SelectionBackgroundColor => IsSelected ? "#49351F" : "#242824";
+    public string SelectionTextColor => IsSelected ? "#FFFFFF" : "#D7DED9";
 
     partial void OnIsSelectedChanged(bool value)
     {
         OnPropertyChanged(nameof(SelectionStroke));
         OnPropertyChanged(nameof(SelectionStrokeThickness));
+        OnPropertyChanged(nameof(SelectionBackgroundColor));
+        OnPropertyChanged(nameof(SelectionTextColor));
     }
 
     public void UpdateStatus(CardStatus value)
