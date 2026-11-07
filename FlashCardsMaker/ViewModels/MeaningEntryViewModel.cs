@@ -105,6 +105,24 @@ public partial class MeaningEntryViewModel : ObservableObject
             await _saveTask;
     }
 
+    public async Task SaveImmediatelyAsync()
+    {
+        _saveDelay?.Cancel();
+        _saveDelay?.Dispose();
+        _saveDelay = null;
+
+        if (_saveTask is not null)
+            await _saveTask;
+
+        if (IsDeleting)
+            return;
+
+        Model.Text = Text.Trim();
+        Model.Style = Style;
+        Model.IsPrimaryMeaning = IsPrimaryMeaning;
+        await _save(this);
+    }
+
     private async Task SaveAfterDelayAsync(CancellationToken cancellationToken)
     {
         try

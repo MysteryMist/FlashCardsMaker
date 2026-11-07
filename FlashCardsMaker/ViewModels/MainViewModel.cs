@@ -28,8 +28,10 @@ public partial class MainViewModel : ObservableObject
     private readonly IDeckRepository _repository;
     private readonly IFlashcardExporter _exporter;
     private CancellationTokenSource? _cardSaveDelay;
+    private Task? _cardSaveTask;
     private CancellationTokenSource? _deckSaveDelay;
     private bool _isLoading;
+    private bool _isDeckViewVisible;
 
     public event EventHandler? MeaningAdding;
     public event EventHandler? MeaningAdded;
@@ -54,8 +56,8 @@ public partial class MainViewModel : ObservableObject
         NounCategories = Enum.GetValues<NounCategory>();
         MeaningStyles = Enum.GetValues<MeaningStyle>();
         JlptLevels = ["N5", "N4", "N3", "N2", "N1"];
-        JlptFilterOptions = new(JlptLevels.Select(level => new FilterOptionViewModel(level, RefreshFilteredDecks)));
-        CardTypeFilterOptions = new(Enum.GetNames<CardType>().Select(type => new FilterOptionViewModel(type, RefreshFilteredDecks)));
+        JlptFilterOptions = ["All levels", .. JlptLevels];
+        CardTypeFilterOptions = ["All types", .. Enum.GetValues<CardType>().Select(GetCardTypeFilterLabel)];
         PaperSizes = Enum.GetValues<PaperSize>();
         PaperOrientations = Enum.GetValues<PaperOrientation>();
         FlipEdges = ["Long edge", "Short edge"];
@@ -76,8 +78,8 @@ public partial class MainViewModel : ObservableObject
     public IReadOnlyList<NounCategory> NounCategories { get; }
     public IReadOnlyList<MeaningStyle> MeaningStyles { get; }
     public IReadOnlyList<string> JlptLevels { get; }
-    public ObservableCollection<FilterOptionViewModel> JlptFilterOptions { get; }
-    public ObservableCollection<FilterOptionViewModel> CardTypeFilterOptions { get; }
+    public IReadOnlyList<string> JlptFilterOptions { get; }
+    public IReadOnlyList<string> CardTypeFilterOptions { get; }
     public IReadOnlyList<PaperSize> PaperSizes { get; }
     public IReadOnlyList<PaperOrientation> PaperOrientations { get; }
     public IReadOnlyList<string> FlipEdges { get; }
@@ -95,6 +97,8 @@ public partial class MainViewModel : ObservableObject
     public partial string NewDeckName { get; set; }
 
     private string _deckSearchText = string.Empty;
+    private int _selectedJlptFilterIndex;
+    private int _selectedCardTypeFilterIndex;
 
     [ObservableProperty]
     public partial string NewDeckJlptLevel { get; set; }
@@ -172,6 +176,51 @@ public partial class MainViewModel : ObservableObject
         set => SetProperty(ref _selectedPaperSize, value);
     }
 
+    public int SelectedJlptFilterIndex
+    {
+        get => _selectedJlptFilterIndex;
+        set
+        {
+            var selectedIndex = Math.Clamp(value, 0, JlptFilterOptions.Count - 1);
+            if (SetProperty(ref _selectedJlptFilterIndex, selectedIndex))
+            {
+                OnPropertyChanged(nameof(SelectedJlptFilter));
+                RefreshFilteredDecks();
+            }
+        }
+    }
+
+    public string SelectedJlptFilter => JlptFilterOptions[SelectedJlptFilterIndex];
+
+    public int SelectedCardTypeFilterIndex
+    {
+        get => _selectedCardTypeFilterIndex;
+        set
+        {
+            var selectedIndex = Math.Clamp(value, 0, CardTypeFilterOptions.Count - 1);
+            if (SetProperty(ref _selectedCardTypeFilterIndex, selectedIndex))
+            {
+                OnPropertyChanged(nameof(SelectedCardTypeFilter));
+                RefreshFilteredDecks();
+            }
+        }
+    }
+
+    public string SelectedCardTypeFilter => CardTypeFilterOptions[SelectedCardTypeFilterIndex];
+
+    public bool IsDeckViewVisible
+    {
+        get => _isDeckViewVisible;
+        set
+        {
+            if (SetProperty(ref _isDeckViewVisible, value))
+            {
+                OnPropertyChanged(nameof(IsCardListVisible));
+                OnPropertyChanged(nameof(IsCardEditorVisible));
+            }
+        }
+    }
+
     public PaperOrientation SelectedPaperOrientation
     {
         get => _selectedPaperOrientation;
@@ -213,6 +262,8 @@ public partial class MainViewModel : ObservableObject
     }
 
     public bool IsEmpty => !HasDecks;
+    public bool IsCardListVisible => !IsDeckViewVisible;
+    public bool IsCardEditorVisible => HasSelectedCard && !IsDeckViewVisible;
 
     public bool IsVerbDeck => DeckCardType == CardType.Verb;
     public bool IsAdverbDeck => DeckCardType == CardType.Adverb;
@@ -242,10 +293,17 @@ public partial class MainViewModel : ObservableObject
         viewModel.PropertyChanged += (_, args) =>
         {
             if (args.PropertyName == nameof(MeaningEntryViewModel.Text))
+            {
                 UpdateMeaningPreviewFontSize();
+                UpdateCardStatus();
+            }
         };
         return viewModel;
     }
+
+    partial void OnHasSelectedCardChanged(bool value) => OnPropertyChanged(nameof(IsCardEditorVisible));
+
+    partial void OnHasDecksChanged(bool value) => OnPropertyChanged(nameof(IsEmpty));
 
     public FormattedString FrontPreviewText
     {
@@ -341,6 +399,14 @@ public partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(BackPreviewMeta));
         OnPropertyChanged(nameof(BackPreviewMetaColor));
         UpdateCardStatus();
+        foreach (var cardItem in Cards)
+        {
+            var meanings = cardItem.Card.Id == SelectedCard?.Id
+                ? GetSelectedMeaningSnapshot()
+                : cardItem.BackMeanings.ToArray();
+            cardItem.UpdateBackPreview(value, cardItem.Card.Hiragana, cardItem.Card.VerbKind,
+                cardItem.Card.Transitivity, cardItem.Card.AdverbClassification, cardItem.Card.NounCategory, meanings);
+        }
     }
 
     public async Task InitializeAsync()
@@ -398,7 +464,7 @@ public partial class MainViewModel : ObservableObject
 
         try
         {
-            await SaveSelectedCardAsync();
+            await SaveCurrentCardEditsAsync();
             await SaveSelectedDeckAsync();
             CancelScheduledSaves();
 
@@ -412,6 +478,7 @@ public partial class MainViewModel : ObservableObject
             _isLoading = true;
             SelectedDeck = deckOverview;
             deckOverview.IsExpanded = true;
+            IsDeckViewVisible = false;
             HasSelectedDeck = true;
             DeckName = deck.Name;
             DeckJlptLevel = deck.JlptLevel;
@@ -424,7 +491,10 @@ public partial class MainViewModel : ObservableObject
             foreach (var card in (await _repository.GetCardsAsync(deck.Id)).OrderByDescending(card => card.Number))
             {
                 var meanings = await _repository.GetMeaningsAsync(card.Id);
-                Cards.Add(new CardListItemViewModel(card, FlashcardRules.GetStatus(deck.CardType, card, meanings)));
+                var cardItem = new CardListItemViewModel(card, FlashcardRules.GetStatus(deck.CardType, card, meanings));
+                cardItem.UpdateBackPreview(deck.CardType, card.Hiragana, card.VerbKind, card.Transitivity,
+                    card.AdverbClassification, card.NounCategory, meanings);
+                Cards.Add(cardItem);
             }
 
             if (Cards.Count > 0)
@@ -456,7 +526,7 @@ public partial class MainViewModel : ObservableObject
 
         if (SelectedDeck == deckOverview && deckOverview.IsExpanded)
         {
-            await SaveSelectedCardAsync();
+            await SaveCurrentCardEditsAsync();
             await SaveSelectedDeckAsync();
             CancelScheduledSaves();
             deckOverview.IsExpanded = false;
@@ -473,6 +543,9 @@ public partial class MainViewModel : ObservableObject
 
         await OpenDeckAsync(deckOverview);
     }
+
+    [RelayCommand]
+    private Task SaveCardEditsAsync() => SaveCurrentCardEditsAsync();
 
     [RelayCommand]
     private async Task DuplicateDeckAsync()
@@ -543,8 +616,14 @@ public partial class MainViewModel : ObservableObject
     private async Task SelectCardAsync(CardListItemViewModel? card)
     {
         if (card is not null)
+        {
+            IsDeckViewVisible = false;
             await LoadCardAsync(card.Card);
+        }
     }
+
+    [RelayCommand]
+    private void ToggleDeckView() => IsDeckViewVisible = !IsDeckViewVisible;
 
     [RelayCommand]
     private async Task DeleteCardAsync()
@@ -642,7 +721,7 @@ public partial class MainViewModel : ObservableObject
         if (SelectedDeck is null)
             return;
 
-        await SaveSelectedCardAsync();
+        await SaveCurrentCardEditsAsync();
         await SaveSelectedDeckAsync();
         var deck = await _repository.GetDeckAsync(SelectedDeck.Deck.Id);
         if (deck is null)
@@ -956,10 +1035,8 @@ public partial class MainViewModel : ObservableObject
 
     private async Task LoadCardAsync(Flashcard card)
     {
-        await SaveSelectedCardAsync();
-        _cardSaveDelay?.Cancel();
-        _cardSaveDelay?.Dispose();
-        _cardSaveDelay = null;
+        await SaveCurrentCardEditsAsync();
+        IsDeckViewVisible = false;
 
         _isLoading = true;
         foreach (var cardItem in Cards)
@@ -978,7 +1055,7 @@ public partial class MainViewModel : ObservableObject
         Meanings.Clear();
 
         foreach (var meaning in await _repository.GetMeaningsAsync(card.Id))
-            Meanings.Add(new MeaningEntryViewModel(meaning, SaveMeaningEntryAsync));
+            Meanings.Add(CreateMeaningEntryViewModel(meaning));
 
         _isLoading = false;
         UpdateCardStatus();
@@ -997,6 +1074,20 @@ public partial class MainViewModel : ObservableObject
         SelectedCard.NounCategory = NounCategory;
         await _repository.SaveCardAsync(SelectedCard);
         SaveStatus = "All changes saved locally";
+    }
+
+    private async Task SaveCurrentCardEditsAsync()
+    {
+        await FlushQueuedCardSaveAsync();
+        if (SelectedCard is null || SelectedDeck is null)
+            return;
+
+        foreach (var meaning in Meanings.ToArray())
+            await meaning.SaveImmediatelyAsync();
+
+        await SaveSelectedCardAsync();
+        SaveStatus = "All changes saved locally";
+        await RefreshDecksAsync();
     }
 
     private async Task SaveSelectedDeckAsync()
@@ -1027,17 +1118,39 @@ public partial class MainViewModel : ObservableObject
 
         _cardSaveDelay?.Cancel();
         _cardSaveDelay?.Dispose();
+        var previousSave = _cardSaveTask;
         _cardSaveDelay = new CancellationTokenSource();
         SaveStatus = "Saving changes…";
         UpdateCardStatus();
-        _ = SaveCardAfterDelayAsync(_cardSaveDelay.Token);
+        _cardSaveTask = SaveCardAfterDelayAsync(_cardSaveDelay.Token, previousSave);
     }
 
-    private async Task SaveCardAfterDelayAsync(CancellationToken cancellationToken)
+    private async Task FlushQueuedCardSaveAsync()
+    {
+        while (true)
+        {
+            var pendingSave = _cardSaveTask;
+            _cardSaveDelay?.Cancel();
+            if (pendingSave is not null)
+                await pendingSave;
+
+            if (!ReferenceEquals(_cardSaveTask, pendingSave))
+                continue;
+
+            _cardSaveDelay?.Dispose();
+            _cardSaveDelay = null;
+            _cardSaveTask = null;
+            return;
+        }
+    }
+
+    private async Task SaveCardAfterDelayAsync(CancellationToken cancellationToken, Task? previousSave)
     {
         try
         {
             await Task.Delay(350, cancellationToken);
+            if (previousSave is not null)
+                await previousSave;
             await SaveSelectedCardAsync();
             await RefreshDecksAsync();
         }
@@ -1139,23 +1252,16 @@ public partial class MainViewModel : ObservableObject
     private void RefreshFilteredDecks()
     {
         var search = DeckSearchText.Trim();
-        var selectedJlptLevels = JlptFilterOptions
-            .Where(option => option.IsSelected)
-            .Select(option => option.Value)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var selectedCardTypes = CardTypeFilterOptions
-            .Where(option => option.IsSelected)
-            .Select(option => option.Value)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var hasSelectedFilters = selectedJlptLevels.Count > 0 || selectedCardTypes.Count > 0;
+        var hasSelectedJlptFilter = SelectedJlptFilter != "All levels";
+        var hasSelectedCardTypeFilter = SelectedCardTypeFilter != "All types";
         var matches = Decks.Where(deck =>
             (string.IsNullOrEmpty(search)
                 || deck.Name.Contains(search, StringComparison.OrdinalIgnoreCase)
                 || deck.JlptLevel.Contains(search, StringComparison.OrdinalIgnoreCase)
                 || deck.CardType.ToString().Contains(search, StringComparison.OrdinalIgnoreCase))
-            && (!hasSelectedFilters
-                || selectedJlptLevels.Contains(deck.JlptLevel)
-                || selectedCardTypes.Contains(deck.CardType.ToString())))
+            && (!hasSelectedJlptFilter && !hasSelectedCardTypeFilter
+                || hasSelectedJlptFilter && string.Equals(deck.JlptLevel, SelectedJlptFilter, StringComparison.OrdinalIgnoreCase)
+                || hasSelectedCardTypeFilter && string.Equals(GetCardTypeFilterLabel(deck.CardType), SelectedCardTypeFilter, StringComparison.OrdinalIgnoreCase)))
             .ToArray();
         var matchingDecks = matches.ToHashSet();
 
@@ -1183,6 +1289,13 @@ public partial class MainViewModel : ObservableObject
         HasNoSearchResults = HasDecks && matches.Length == 0;
     }
 
+    private static string GetCardTypeFilterLabel(CardType cardType) => cardType switch
+    {
+        CardType.IAdjective => "I-Adjective",
+        CardType.NaAdjective => "Na-Adjective",
+        _ => cardType.ToString()
+    };
+
     private void UpdateCardStatus()
     {
         if (!MainThread.IsMainThread)
@@ -1190,6 +1303,9 @@ public partial class MainViewModel : ObservableObject
             MainThread.BeginInvokeOnMainThread(UpdateCardStatus);
             return;
         }
+
+        if (_isLoading)
+            return;
 
         OnPropertyChanged(nameof(CardDisplayNumber));
         OnPropertyChanged(nameof(CardStatusLabel));
@@ -1204,6 +1320,8 @@ public partial class MainViewModel : ObservableObject
 
         var cardItem = Cards.FirstOrDefault(item => item.Card.Id == SelectedCard.Id);
         cardItem?.UpdateFrontText(FrontText);
+        cardItem?.UpdateBackPreview(DeckCardType, Hiragana, VerbKind, Transitivity, AdverbClassification,
+            NounCategory, GetSelectedMeaningSnapshot());
 
         if (SelectedDeck is not null)
         {
@@ -1213,16 +1331,28 @@ public partial class MainViewModel : ObservableObject
         }
     }
 
+    private CardMeaning[] GetSelectedMeaningSnapshot() => Meanings.Select(meaning => new CardMeaning
+    {
+        Id = meaning.Model.Id,
+        CardId = meaning.Model.CardId,
+        Text = meaning.Text,
+        IsPrimaryMeaning = meaning.IsPrimaryMeaning,
+        Style = meaning.Style,
+        SortOrder = meaning.Model.SortOrder
+    }).ToArray();
+
     partial void OnFrontTextChanged(string value)
     {
         QueueCardSave();
         OnPropertyChanged(nameof(FrontPreviewText));
+        UpdateCardStatus();
     }
 
     partial void OnHiraganaChanged(string value)
     {
         QueueCardSave();
         OnPropertyChanged(nameof(BackPreviewReading));
+        UpdateCardStatus();
     }
 
     partial void OnVerbKindChanged(VerbKind? value)
@@ -1230,12 +1360,14 @@ public partial class MainViewModel : ObservableObject
         QueueCardSave();
         OnPropertyChanged(nameof(BackPreviewMeta));
         OnPropertyChanged(nameof(BackPreviewMetaColor));
+        UpdateCardStatus();
     }
 
     partial void OnTransitivityChanged(VerbTransitivity? value)
     {
         QueueCardSave();
         OnPropertyChanged(nameof(BackPreviewMeta));
+        UpdateCardStatus();
     }
 
     partial void OnAdverbClassificationChanged(AdverbClassification? value)
@@ -1243,6 +1375,11 @@ public partial class MainViewModel : ObservableObject
         QueueCardSave();
         OnPropertyChanged(nameof(BackPreviewMeta));
         OnPropertyChanged(nameof(BackPreviewMetaColor));
+        UpdateCardStatus();
     }
-    partial void OnNounCategoryChanged(NounCategory? value) => QueueCardSave();
+    partial void OnNounCategoryChanged(NounCategory? value)
+    {
+        QueueCardSave();
+        UpdateCardStatus();
+    }
 }

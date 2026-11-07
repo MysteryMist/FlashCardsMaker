@@ -36,35 +36,17 @@
                         <Button Text="＋  Create deck" Command="{Binding CreateDeckCommand}" BackgroundColor="#1F6F50" TextColor="#F5F5F5" HorizontalOptions="Start" />
                     </VerticalStackLayout>
                 </Border>
-                <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                <Grid ColumnDefinitions="{OnIdiom Phone='*', Default='*,*'}" RowDefinitions="Auto,Auto" ColumnSpacing="10" RowSpacing="10">
                     <Border BackgroundColor="#1B1B1B" Stroke="{StaticResource PanelBorder}" StrokeThickness="1.5" StrokeShape="RoundRectangle 12" Padding="12">
                         <VerticalStackLayout Spacing="6">
                             <Label Text="FILTER BY JLPT" FontSize="11" FontAttributes="Bold" TextColor="#A9C6B7" />
-                            <FlexLayout Direction="Row" Wrap="Wrap" BindableLayout.ItemsSource="{Binding JlptFilterOptions}">
-                                <BindableLayout.ItemTemplate>
-                                    <DataTemplate>
-                                        <HorizontalStackLayout Spacing="2" Margin="0,0,8,0">
-                                            <CheckBox IsChecked="{Binding IsSelected}" Color="#1F6F50" VerticalOptions="Center" />
-                                            <Label Text="{Binding Value}" VerticalOptions="Center" FontSize="12" />
-                                        </HorizontalStackLayout>
-                                    </DataTemplate>
-                                </BindableLayout.ItemTemplate>
-                            </FlexLayout>
+                            <Picker ItemsSource="{Binding JlptFilterOptions}" SelectedIndex="{Binding SelectedJlptFilterIndex, Mode=TwoWay}" />
                         </VerticalStackLayout>
                     </Border>
-                    <Border Grid.Column="1" BackgroundColor="#1B1B1B" Stroke="{StaticResource PanelBorder}" StrokeThickness="1.5" StrokeShape="RoundRectangle 12" Padding="12">
+                    <Border Grid.Row="{OnIdiom Phone=1, Default=0}" Grid.Column="{OnIdiom Phone=0, Default=1}" BackgroundColor="#1B1B1B" Stroke="{StaticResource PanelBorder}" StrokeThickness="1.5" StrokeShape="RoundRectangle 12" Padding="12">
                         <VerticalStackLayout Spacing="6">
                             <Label Text="FILTER BY CARD TYPE" FontSize="11" FontAttributes="Bold" TextColor="#A9C6B7" />
-                            <FlexLayout Direction="Row" Wrap="Wrap" BindableLayout.ItemsSource="{Binding CardTypeFilterOptions}">
-                                <BindableLayout.ItemTemplate>
-                                    <DataTemplate>
-                                        <HorizontalStackLayout Spacing="2" Margin="0,0,8,0">
-                                            <CheckBox IsChecked="{Binding IsSelected}" Color="#1F6F50" VerticalOptions="Center" />
-                                            <Label Text="{Binding Value}" VerticalOptions="Center" FontSize="12" />
-                                        </HorizontalStackLayout>
-                                    </DataTemplate>
-                                </BindableLayout.ItemTemplate>
-                            </FlexLayout>
+                            <Picker ItemsSource="{Binding CardTypeFilterOptions}" SelectedIndex="{Binding SelectedCardTypeFilterIndex, Mode=TwoWay}" />
                         </VerticalStackLayout>
                     </Border>
                 </Grid>

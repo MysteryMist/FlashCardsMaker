@@ -159,7 +159,7 @@ public sealed class FlashcardExporter : IFlashcardExporter
                     .Bold()
                     .FontColor(PdfColors.Red.Medium);
                 var frontFontSize = FrontTextFontSizer.CalculateSize(
-                    card.FrontText, cellWidth - 32, cellHeight - 48, 62);
+                    card.FrontText, cellWidth - 32, cellHeight - 48, 85);
                 column.Item().ExtendVertical().AlignMiddle().AlignCenter().Text(text =>
                 {
                     foreach (var run in SplitByScript(card.FrontText))
